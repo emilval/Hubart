@@ -1,12 +1,3 @@
-#include <micro_ros_arduino.h>
-#include <stdio.h>
-#include <rcl/rcl.h>
-#include <rcl/error_handling.h>
-#include <rclc/rclc.h>
-#include <rclc/executor.h>
-
-#include <std_msgs/msg/float32_multi_array.h>
-#include <sensor_msgs/msg/joint_state.h>
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
@@ -33,28 +24,12 @@ struct Joint {
 
 Joint joints[NUM_JOINTS] = {
   {"base_joint",       &pwm330, 0, PERIOD_330HZ, 630,  2690, 90, 90},
-  {"shoulder_joint",   &pwm330, 1, PERIOD_330HZ, 610,  670,  90, 90},
+  {"shoulder_joint",   &pwm330, 1, PERIOD_330HZ, 610,  2670,  90, 90},
   {"elbow_joint",      &pwm50,  2, PERIOD_50HZ,  450,  2480, 90, 90},
   {"neck_joint",       &pwm50,  0, PERIOD_50HZ,  770,  2270, 90, 90},
   {"head_turn_joint",  &pwm50,  1, PERIOD_50HZ,  460,  2440, 90, 90},
   {"gripper_joint",    &pwm50,  4, PERIOD_50HZ,  780,  1820, 90, 90}
 };
-
-// Micro-ROS Structures
-rcl_node_t node;
-rclc_support_t support;
-rcl_allocator_t allocator;
-rclc_executor_t executor;
-
-rcl_publisher_t joint_state_publisher;
-rcl_subscription_t joint_command_subscriber;
-
-sensor_msgs__msg__JointState joint_state_msg;
-std_msgs__msg__Float32MultiArray joint_command_msg;
-
-// Pre-allocated memory buffers for Micro-ROS
-double position_buffer[NUM_JOINTS];
-float command_buffer[NUM_JOINTS];
 
 void setJointAngle(Joint &j, int angleDeg) {
   angleDeg = constrain(angleDeg, 0, 180);
@@ -65,66 +40,78 @@ void setJointAngle(Joint &j, int angleDeg) {
   j.driver->setPWM(j.channel, 0, pwmValue);
 }
 
-// Callback when ROS 2 receives new target angles
-void joint_command_callback(const void * msgin) {
-  const std_msgs__msg__Float32MultiArray * msg = (const std_msgs__msg__Float32MultiArray *)msgin;
-  if (msg->data.size >= NUM_JOINTS) {
-    for (int i = 0; i < NUM_JOINTS; i++) {
-      int userAngle = constrain((int)msg->data.data[i], -90, 90);
-      joints[i].targetAngle = userAngle + HOME_OFFSET;
-    }
+void printStatus() {
+  Serial.println("\n--- Current Joint Positions ---");
+  for (int i = 0; i < NUM_JOINTS; i++) {
+    int userAngle = joints[i].targetAngle - HOME_OFFSET;
+    Serial.print("  [");
+    Serial.print(i);
+    Serial.print("] ");
+    Serial.print(joints[i].name);
+    Serial.print(": ");
+    Serial.print(userAngle);
+    Serial.println(" deg");
   }
+  Serial.println("--------------------------------");
 }
 
-void setup() {
-  Serial.begin(115200);
+void processSerialInput(String input) {
+  input.trim();
+  if (input.length() == 0) return;
 
-  // Initialize hardware PWM drivers
-  pwm50.begin();
-  pwm50.setPWMFreq(50);
-  pwm330.begin();
-  pwm330.setPWMFreq(330);
-  delay(100);
-
-  for (int i = 0; i < NUM_JOINTS; i++) {
-    setJointAngle(joints[i], joints[i].currentAngle);
+  // Option A: Single joint command (e.g. "j0:15" or "j2:-30")
+  if (input.startsWith("j") || input.startsWith("J")) {
+    int colonIdx = input.indexOf(':');
+    if (colonIdx > 1) {
+      int jointIdx = input.substring(1, colonIdx).toInt();
+      int angleVal = input.substring(colonIdx + 1).toInt();
+      if (jointIdx >= 0 && jointIdx < NUM_JOINTS) {
+        angleVal = constrain(angleVal, -90, 90);
+        joints[jointIdx].targetAngle = angleVal + HOME_OFFSET;
+        Serial.print("Updated ");
+        Serial.print(joints[jointIdx].name);
+        Serial.print(" target to ");
+        Serial.print(angleVal);
+        Serial.println(" deg");
+      }
+    }
+    return;
   }
 
-  // Initialize Micro-ROS Serial Transport
-  set_microros_transports();
-  allocator = rcl_get_default_allocator();
-  rclc_support_init(&support, 0, NULL, &allocator);
+  // Option B: Query status command
+  if (input == "?" || input == "status") {
+    printStatus();
+    return;
+  }
 
-  // Create ROS 2 Node
-  rclc_node_init_default(&node, "hubert_esp32_node", "", &support);
+  // Option C: 6 comma- or space-separated values (e.g., "0, -20, 45, 0, 0, 10")
+  int parsedCount = 0;
+  int startIdx = 0;
 
-  // Allocate memory for messages
-  joint_command_msg.data.capacity = NUM_JOINTS;
-  joint_command_msg.data.size = 0;
-  joint_command_msg.data.data = command_buffer;
+  for (int i = 0; i <= input.length(); i++) {
+    if (i == input.length() || input.charAt(i) == ',' || input.charAt(i) == ' ') {
+      if (i > startIdx) {
+        String token = input.substring(startIdx, i);
+        token.trim();
+        if (token.length() > 0 && parsedCount < NUM_JOINTS) {
+          int userAngle = constrain(token.toInt(), -90, 90);
+          joints[parsedCount].targetAngle = userAngle + HOME_OFFSET;
+          parsedCount++;
+        }
+      }
+      startIdx = i + 1;
+    }
+  }
 
-  joint_state_msg.position.capacity = NUM_JOINTS;
-  joint_state_msg.position.size = NUM_JOINTS;
-  joint_state_msg.position.data = position_buffer;
-
-  // Initialize Subscriber and Publisher
-  rclc_subscription_init_default(
-    &joint_command_subscriber,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
-    "/joint_commands"
-  );
-
-  rclc_publisher_init_default(
-    &joint_state_publisher,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
-    "/joint_states"
-  );
-
-  // Create Executor
-  rclc_executor_init(&executor, &support.context, 1, &allocator);
-  rclc_executor_add_subscription(&executor, &joint_command_subscriber, &joint_command_msg, &joint_command_callback, ON_NEW_DATA);
+  if (parsedCount == NUM_JOINTS) {
+    Serial.println("Successfully updated all 6 joint target angles.");
+  } else if (parsedCount > 0) {
+    Serial.print("Updated ");
+    Serial.print(parsedCount);
+    Serial.println(" joint(s). Expected 6 values.");
+  } else {
+    Serial.println("Invalid input format. Use: '0, -30, 45, 0, 10, -10' or 'j0:15'");
+  }
 }
 
 void moveJointsSimultaneously() {
@@ -139,26 +126,40 @@ void moveJointsSimultaneously() {
   }
 }
 
-void publishJointStates() {
-  // Convert current physical angles (0-180) back to relative radians
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize hardware PWM drivers
+  pwm50.begin();
+  pwm50.setPWMFreq(50);
+  pwm330.begin();
+  pwm330.setPWMFreq(330);
+  delay(100);
+
+  // Move joints to home position initially
   for (int i = 0; i < NUM_JOINTS; i++) {
-    int userAngleDeg = joints[i].currentAngle - HOME_OFFSET;
-    joint_state_msg.position.data[i] = userAngleDeg * (3.14159265 / 180.0);
+    setJointAngle(joints[i], joints[i].currentAngle);
   }
-  rcl_publish(&joint_state_publisher, &joint_state_msg, NULL);
+
+  Serial.println("=========================================");
+  Serial.println(" HUBERT 6-DOF Manual Serial Angle Control");
+  Serial.println("=========================================");
+  Serial.println("Commands:");
+  Serial.println("  1. Enter 6 angles (-90 to +90): e.g. '0, -30, 45, 0, 10, -10'");
+  Serial.println("  2. Single joint update: e.g. 'j0:15' or 'j2:-45'");
+  Serial.println("  3. Type '?' to view current joint angles");
+  Serial.println("=========================================");
 }
 
-unsigned long last_pub_time = 0;
-
 void loop() {
-  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+  // Read Serial commands from user
+  if (Serial.available() > 0) {
+    String input = Serial.readStringUntil('\n');
+    processSerialInput(input);
+  }
+
+  // Smoothly step servos toward target position
   moveJointsSimultaneously();
 
-  // Publish /joint_states at 10Hz
-  if (millis() - last_pub_time > 100) {
-    publishJointStates();
-    last_pub_time = millis();
-  }
-  
   delay(STEP_DELAY_MS);
 }
