@@ -40,6 +40,8 @@ chain = Chain(name="Hubart", links=[
     ],
     active_links_mask=[False, True, True, True, False]
     )
+
 Target_position = [0.22, 0.13, 0.25]
+
 angles = chain.inverse_kinematics(Target_position)
 print("Joint angles to reach the target position:", np.degrees(angles[1:]))
