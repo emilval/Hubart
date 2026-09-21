@@ -4,7 +4,11 @@ from skimage.morphology import skeletonize
 import matplotlib.pyplot as plt
 
 
-def create_robot_paths(img_path: str) -> list:
+def create_robot_paths(img_path: str) -> np.array:
+    """
+    Produces an array of arrays, where each array is a pen stroke. Epsilon controls
+    the amount of substrokes within each stroke.
+    """
 
     img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
     _, binary = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY_INV)
@@ -26,7 +30,7 @@ def create_robot_paths(img_path: str) -> list:
 
 
 
-def plot_robot_paths(robot_paths: list) -> None:
+def plot_robot_paths(robot_paths: np.array) -> None:
     plt.figure(figsize=(8, 8))
     for path in robot_paths:
         x_coords = path[:, 0]
@@ -41,3 +45,9 @@ def plot_robot_paths(robot_paths: list) -> None:
     plt.axis('equal')
     plt.title("Robot Path Preview")
     plt.show()
+
+if __name__ == '__main__': 
+    image_path = input("Enter image path:")
+    robot_paths = create_robot_paths(image_path)
+    #print(robot_paths)
+    plot_robot_paths(robot_paths)
