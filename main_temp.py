@@ -64,7 +64,11 @@ def main(send_to_robot: bool) -> None:
 	print(f"Angle commands: {len(angles)}")
 	
 	if send_to_robot:
-		send_angles_to_robot(angles)
+		send_angles_to_robot(
+			angles,
+			wait_for_enter=True,
+			coordinates=flat_coordinates,
+		)
 	else:
 		print("Dry run only. Add --send to control Hubert.")
 
