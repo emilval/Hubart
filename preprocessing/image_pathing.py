@@ -49,5 +49,5 @@ def plot_robot_paths(robot_paths: np.array) -> None:
 if __name__ == '__main__': 
     image_path = input("Enter image path:")
     robot_paths = create_robot_paths(image_path)
-    #print(robot_paths)
+    print(robot_paths)
     plot_robot_paths(robot_paths)

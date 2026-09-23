@@ -31,6 +31,8 @@ Joint joints[NUM_JOINTS] = {
   {"gripper_joint",    &pwm50,  4, PERIOD_50HZ,  780,  1820, 90, 90}
 };
 
+bool targetInProgress = false;
+
 void setJointAngle(Joint &j, int angleDeg) {
   angleDeg = constrain(angleDeg, 0, 180);
   int centerPulseUs = (j.minPulseUs + j.maxPulseUs) / 2;
@@ -104,6 +106,7 @@ void processSerialInput(String input) {
   }
 
   if (parsedCount == NUM_JOINTS) {
+    targetInProgress = true;
     Serial.println("Successfully updated all 6 joint target angles.");
   } else if (parsedCount > 0) {
     Serial.print("Updated ");
@@ -122,6 +125,21 @@ void moveJointsSimultaneously() {
     } else if (joints[i].currentAngle > joints[i].targetAngle) {
       joints[i].currentAngle--;
       setJointAngle(joints[i], joints[i].currentAngle);
+    }
+  }
+
+  if (targetInProgress) {
+    bool targetReached = true;
+    for (int i = 0; i < NUM_JOINTS; i++) {
+      if (joints[i].currentAngle != joints[i].targetAngle) {
+        targetReached = false;
+        break;
+      }
+    }
+
+    if (targetReached) {
+      targetInProgress = false;
+      Serial.println("TARGET_REACHED");
     }
   }
 }
