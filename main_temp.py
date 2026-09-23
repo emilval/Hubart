@@ -8,7 +8,7 @@ from preprocessing.image_pathing import create_robot_paths
 
 
 IMAGE_PATH = Path(__file__).resolve().parent / "images" / "square.png"
-MAPPING_PATH = Path(__file__).resolve().parent / "2d_to_3d.py"
+MAPPING_PATH = Path(__file__).resolve().parent / "preprocessing" / "2d_to_3d.py"
 FIXED_ANGLES = (0, 0, 0)
 COORDINATE_DECIMAL_PLACES = 4
 
