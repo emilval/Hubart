@@ -26,7 +26,7 @@ def map_image_to_3d(image):
             u = u * scale
             v = v * scale
             x, y, z = map_2d_to_3d(u, v)
-            new_stroke.append((x, y, z))
+            new_stroke.append((x, -y, -z))
         image_3d.append(new_stroke)
     return image_3d
 
