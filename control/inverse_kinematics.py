@@ -33,7 +33,7 @@ chain = Chain(
         ),
         URDFLink(
             name="gripper_joint",
-            origin_translation=[0, -L9, 0],
+            origin_translation=[0, -L9-0.14, 0],
             origin_orientation=[0, 0, 0],
             rotation=None,
             joint_type="fixed",

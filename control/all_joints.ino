@@ -7,7 +7,7 @@ Adafruit_PWMServoDriver pwm330(0x41);  // 330 Hz Board
 
 const int PERIOD_50HZ = 20000;
 const int PERIOD_330HZ = 3030;
-const int STEP_DELAY_MS = 15;
+const int STEP_DELAY_MS = 90;
 const int HOME_OFFSET = 90;
 const int NUM_JOINTS = 6;
 
