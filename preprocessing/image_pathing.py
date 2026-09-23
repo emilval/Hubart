@@ -2,9 +2,9 @@ import cv2
 import numpy as np
 from skimage.morphology import skeletonize
 import matplotlib.pyplot as plt
+from pathlib import Path
 
-
-def create_robot_paths(img_path: str) -> np.array:
+def create_robot_paths(img_path: Path) -> np.array:
     """
     Produces an array of arrays, where each array is a pen stroke. Epsilon controls
     the amount of substrokes within each stroke.
