@@ -20,11 +20,11 @@ chain = Chain(
         URDFLink(
             name="shoulder_joint",
             origin_translation=[L6, -L4, L2 + L3],
-            origin_orientation=[np.pi/2, 0, 0],
+            origin_orientation=[np.pi/2, -np.pi/2, 0],
             rotation=[0, 0, 1],
             bounds=(-np.pi / 2, np.pi / 4),
         ),
-        URDFLink(
+        URDFLink(   
             name="elbow_joint",
             origin_translation=[L7, -L8, -L5],
             origin_orientation=[0, 0, 0],
