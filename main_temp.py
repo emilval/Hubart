@@ -14,76 +14,92 @@ COORDINATE_DECIMAL_PLACES = 4
 
 
 def map_image_to_3d(image):
-	module_spec = importlib.util.spec_from_file_location("mapping", MAPPING_PATH)
-	mapping = importlib.util.module_from_spec(module_spec)
-	module_spec.loader.exec_module(mapping)
-	return mapping.map_image_to_3d(image)
+    module_spec = importlib.util.spec_from_file_location("mapping", MAPPING_PATH)
+    mapping = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(mapping)
+    return mapping.map_image_to_3d(image)
 
 
 def coordinates_to_angles(coordinates):
-	return [
-		(*get_servo_angles(point), *FIXED_ANGLES)
-		for stroke in coordinates
-		for point in stroke
-	]
+    return [
+        (*get_servo_angles(point), *FIXED_ANGLES)
+        for stroke in coordinates
+        for point in stroke
+    ]
 
 
-def main(send_to_robot: bool) -> None:
+def main(send_to_robot: bool, offset_x: float) -> None:
 
-	image = create_robot_paths(IMAGE_PATH)
-	print("\nIMAGE PATHING - 2D COORDINATES:")
-	for stroke_number, stroke in enumerate(image, start=1):
-		for point_number, point in enumerate(stroke, start=1):
-			print(f"  stroke {stroke_number}, point {point_number}: {tuple(point)}")
+    image = create_robot_paths(IMAGE_PATH)
+    print("\nIMAGE PATHING - 2D COORDINATES:")
+    for stroke_number, stroke in enumerate(image, start=1):
+        for point_number, point in enumerate(stroke, start=1):
+            print(f"  stroke {stroke_number}, point {point_number}: {tuple(point)}")
 
-	coordinates = [
-		[
-			(point[0], round(float(point[1]), COORDINATE_DECIMAL_PLACES),
-			 round(float(point[2]), COORDINATE_DECIMAL_PLACES))
-			for point in stroke
-		]
-		for stroke in map_image_to_3d(image)
-	]
-	print("\n2D TO 3D - TRANSLATED COORDINATES:")
-	for stroke_number, stroke in enumerate(coordinates, start=1):
-		for point_number, point in enumerate(stroke, start=1):
-			print(f"  stroke {stroke_number}, point {point_number}: {point}")
+    coordinates = [
+        [
+            (
+                point[0],
+                round(float(point[1]), COORDINATE_DECIMAL_PLACES),
+                round(float(point[2]), COORDINATE_DECIMAL_PLACES),
+            )
+            for point in stroke
+        ]
+        for stroke in map_image_to_3d(image)
+    ]
 
-	angles = coordinates_to_angles(coordinates)
-	flat_coordinates = [
-		point
-		for stroke in coordinates
-		for point in stroke
-	]
-	print("\nHUBERT CONTROL - ANGLES:")
-	for point_number, angle_command in enumerate(angles, start=1):
-		print(f"  point {point_number}: {angle_command}")
+    # Add reset position after each stroke
+    for stroke in coordinates:
+        if stroke:
+            last_x, last_y, last_z = stroke[-1]
+            reset_coordinate = (
+                round(last_x + offset_x, COORDINATE_DECIMAL_PLACES),
+                last_y,
+                last_z,
+            )
+            stroke.append(reset_coordinate)
 
-	print(f"Image points: {sum(len(stroke) for stroke in image)}")
-	print(f"3D coordinates: {sum(len(stroke) for stroke in coordinates)}")
-	print(f"Angle commands: {len(angles)}")
-	
-	if send_to_robot:
-		send_angles_to_robot(
-			angles,
-			wait_for_enter=True,
-			coordinates=flat_coordinates,
-		)
-	else:
-		print("Dry run only. Add --send to control Hubert.")
+    print("\n2D TO 3D - TRANSLATED COORDINATES:")
+    for stroke_number, stroke in enumerate(coordinates, start=1):
+        for point_number, point in enumerate(stroke, start=1):
+            print(f"  stroke {stroke_number}, point {point_number}: {point}")
+
+
+    angles = coordinates_to_angles(coordinates)
+    flat_coordinates = [
+        point
+        for stroke in coordinates
+        for point in stroke
+    ]
+    print("\nHUBERT CONTROL - ANGLES:")
+    for point_number, angle_command in enumerate(angles, start=1):
+        print(f"  point {point_number}: {angle_command}")
+
+    print(f"Image points: {sum(len(stroke) for stroke in image)}")
+    print(f"3D coordinates: {sum(len(stroke) for stroke in coordinates)}")
+    print(f"Angle commands: {len(angles)}")
+
+    if send_to_robot:
+        send_angles_to_robot(
+            angles,
+            wait_for_enter=True,
+            coordinates=flat_coordinates,
+        )
+    else:
+        print("Dry run only. Add --send to control Hubert.")
 
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser(
-		description="Convert google_simple_house into Hubert drawing commands."
-	)
-	parser.add_argument(
-		"--send",
-		action="store_true",
-		help="send the mapped trajectory to Hubert via serial",
-	)
-	args = parser.parse_args()
-	main(args.send)
+    parser = argparse.ArgumentParser(
+        description="Convert google_simple_house into Hubert drawing commands."
+    )
+    parser.add_argument(
+        "--send",
+        action="store_true",
+        help="send the mapped trajectory to Hubert via serial",
+    )
+    args = parser.parse_args()
+    main(args.send)
 
 # Quick single-target tests used during setup:
 #
