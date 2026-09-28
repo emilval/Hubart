@@ -20,9 +20,9 @@ chain = Chain(
         URDFLink(
             name="shoulder_joint",
             origin_translation=[L6, -L4, L2 + L3],
-            origin_orientation=[np.pi / 2, -np.pi / 2, 0],
+            origin_orientation=[np.pi/2, 0, 0],
             rotation=[0, 0, 1],
-            bounds=(-np.pi / 2, np.pi / 2),
+            bounds=(-np.pi / 2, np.pi / 4),
         ),
         URDFLink(
             name="elbow_joint",
@@ -33,7 +33,7 @@ chain = Chain(
         ),
         URDFLink(
             name="gripper_joint",
-            origin_translation=[0, -L9-0.14, 0],
+            origin_translation=[0, -L9-0.17, 0],
             origin_orientation=[0, 0, 0],
             rotation=None,
             joint_type="fixed",
@@ -49,8 +49,8 @@ def get_servo_angles(target_position):
     raw_degrees = np.degrees(raw_ik_angles[1:4])  # [base, shoulder, elbow]
 
     # Map relative angles centered around 90° home position
-    base_angle = int(round(raw_degrees[0]))
-    shoulder_angle = int(round(raw_degrees[1]))
-    elbow_angle = int(round(raw_degrees[2]))
+    base_angle = raw_degrees[0]
+    shoulder_angle = raw_degrees[1]
+    elbow_angle = raw_degrees[2]
 
     return base_angle, shoulder_angle, elbow_angle

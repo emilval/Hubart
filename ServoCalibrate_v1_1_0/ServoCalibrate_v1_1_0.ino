@@ -22,8 +22,8 @@
 #include <Adafruit_PWMServoDriver.h>
 
 // Välj vilken modul du vill testa (ändra här)
-#define TEST_MODULE_50HZ
-//#define TEST_MODULE_330HZ
+//#define TEST_MODULE_50HZ
+#define TEST_MODULE_330HZ
 
 // Välj servo-kanal (0-15)
 int SERVO_CHANNEL = 1;

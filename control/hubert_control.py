@@ -3,7 +3,8 @@ from typing import Iterable, Sequence
 
 import serial
 
-PORT = "/dev/tty.usbmodem206EF1333F082"
+ #PORT = "/dev/tty.usbmodem206EF1333F082"
+PORT = "/dev/ttyACM0"
 BAUD_RATE = 115200
 RESET_DELAY_S = 2.0
 TARGET_TIMEOUT_S = 30.0
