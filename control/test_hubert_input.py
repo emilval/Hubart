@@ -16,25 +16,20 @@ Send a Cartesian position to Hubert:
 import argparse
 import sys
 from pathlib import Path
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from control.hubert_control import send_angles_to_robot
-from control.inverse_kinematics import get_servo_angles
+# Import 'chain' so we can use it for visualization
+from control.inverse_kinematics import get_servo_angles, chain
 
 FIXED_ANGLES = (0, 0, 0)
 
-
-
 def coordinate_to_angles(coordinate: list[float]) -> tuple[float, ...]:
     x, y, z = coordinate
-    coordinate = [
-        x,
-        y,
-        z,
-    ]
+    coordinate = [x, y, z]
     return (*get_servo_angles(coordinate), *FIXED_ANGLES)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -60,9 +55,16 @@ def main() -> None:
         action="store_true",
         help="actually send the command to Hubert",
     )
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Visualize the robot pose using matplotlib instead of/alongside sending",
+    )
     args = parser.parse_args()
 
     coordinate = None
+    ik_radians = None  # We need the raw radians to feed back into the visualizer
+
     if args.coordinate is not None:
         coordinate = [
             args.coordinate[0],
@@ -70,19 +72,37 @@ def main() -> None:
             args.coordinate[2],
         ]
         angles = coordinate_to_angles(coordinate)
+        # Calculate raw radians explicitly for the visualizer
+        ik_radians = chain.inverse_kinematics(coordinate)
+        
         print(f"Coordinate: {coordinate}")
         print(f"IK angles: {angles}")
     else:
         angles = tuple(args.angles)
+        # Convert manual servo angles back to radians for the IK chain plot
+        # chain expects a 5-element array: [base_link, joint1, joint2, joint3, end_effector]
+        ik_radians = [0, np.radians(angles[0]), np.radians(angles[1]), np.radians(angles[2]), 0]
+        
         print(f"Joint angles: {angles}")
 
     print(f"Arduino command: {','.join(map(str, angles))}")
 
+    if args.visualize:
+        try:
+            import matplotlib.pyplot as plt
+            
+            fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
+            # Plot the chain at the calculated/provided angles
+            chain.plot(ik_radians, ax, target=coordinate)
+            plt.title("Hubert IK Visualization")
+            plt.show()
+        except ImportError:
+            print("Error: matplotlib is required for visualization. Run: pip install matplotlib")
+
     if args.send:
         send_angles_to_robot([angles], coordinates=[coordinate] if coordinate else None)
-    else:
-        print("Dry run only. Add --send to transmit this command.")
-
+    elif not args.visualize:
+        print("Dry run only. Add --send to transmit or --visualize to plot this command.")
 
 if __name__ == "__main__":
     main()
