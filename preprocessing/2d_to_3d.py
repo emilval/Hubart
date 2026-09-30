@@ -1,7 +1,7 @@
 import numpy as np
 
 #1024x2024
-scale = 0.297 / 736 #scale image to fit on a4
+scale = 0.297 / 2024 #scale image to fit on a4
 
 x0 = 0.4 # distance to wall
 # y0 and z0 define the position of the top left corner of the page
