@@ -1,16 +1,20 @@
 import numpy as np
 
 #1024x2024
-scale = 0.297 / 2024 #scale image to fit on a4
+scale = 0.297 / 2024 * 0.7#scale image to fit on a4
 
-x0 = 0.4 # distance to wall
+# tv demo x,y,z = 0.28, -0.05, 0.3 ish, +-1-2cm
+
+
+
+x0 = 0.37 # distance to wall
 # y0 and z0 define the position of the top left corner of the page
-y0 = 0.05 
-z0 = 0.5
+y0 = -0.07
+z0 = 0.35
 
 # this function assumes that the plane is parallel to the yz-plane
 def map_2d_to_3d(u, v):
-    x = x0
+    x = x0 
     y = y0 - u
     z = z0 - v
     return x, y, z

@@ -21,11 +21,14 @@ def map_image_to_3d(image):
 
 
 def coordinates_to_angles(coordinates):
-	return [
-		(*get_servo_angles(point), *FIXED_ANGLES)
-		for stroke in coordinates
-		for point in stroke
-	]
+	angle_commands = []
+	previous_angles = (0, 0, 0)  
+	for stroke in coordinates:
+		for point in stroke:
+			servo_angles = get_servo_angles(point, previous_angles)
+			angle_commands.append((*servo_angles, *FIXED_ANGLES))
+			previous_angles = servo_angles
+	return angle_commands
 
 
 def main(send_to_robot: bool) -> None:

@@ -7,9 +7,12 @@ Adafruit_PWMServoDriver pwm330(0x41);  // 330 Hz Board
 
 const int PERIOD_50HZ = 20000;
 const int PERIOD_330HZ = 3030;
-const int STEP_DELAY_MS = 90;
+const int STEP_DELAY_MS = 10;
 const int HOME_OFFSET = 90;
 const int NUM_JOINTS = 6;
+const float STEP_DEG = 0.5;
+
+
 
 struct Joint {
   const char* name;
@@ -18,8 +21,8 @@ struct Joint {
   int periodUs;
   int minPulseUs;
   int maxPulseUs;
-  int currentAngle; // Physical 0 - 180 degrees
-  int targetAngle;  // Physical 0 - 180 degrees
+  float currentAngle; // Physical 0 - 180 degrees
+  float targetAngle;  // Physical 0 - 180 degrees
 };
 
 Joint joints[NUM_JOINTS] = {
@@ -33,12 +36,23 @@ Joint joints[NUM_JOINTS] = {
 
 bool targetInProgress = false;
 
-void setJointAngle(Joint &j, int angleDeg) {
-  angleDeg = constrain(angleDeg, 0, 180);
-  int centerPulseUs = (j.minPulseUs + j.maxPulseUs) / 2;
-  int pulseUs = (angleDeg <= 90) ? map(angleDeg, 0, 90, j.minPulseUs, centerPulseUs)
-                                 : map(angleDeg, 90, 180, centerPulseUs, j.maxPulseUs);
-  int pwmValue = map(pulseUs, 0, j.periodUs, 0, 4096);
+void setJointAngle(Joint &j, float angleDeg) {
+  // Constrain between 0.0 and 180.0
+  if (angleDeg < 0.0) angleDeg = 0.0;
+  if (angleDeg > 180.0) angleDeg = 180.0;
+
+  float centerPulseUs = (j.minPulseUs + j.maxPulseUs) / 2.0;
+  float pulseUs;
+  
+  // Float equivalent of your piecewise map() logic
+  if (angleDeg <= 90.0) {
+    pulseUs = j.minPulseUs + (angleDeg / 90.0) * (centerPulseUs - j.minPulseUs);
+  } else {
+    pulseUs = centerPulseUs + ((angleDeg - 90.0) / 90.0) * (j.maxPulseUs - centerPulseUs);
+  }
+
+  // Convert pulse microseconds to the 0-4095 PCA9685 scale
+  int pwmValue = (int)((pulseUs / (float)j.periodUs) * 4096.0);
   j.driver->setPWM(j.channel, 0, pwmValue);
 }
 
@@ -116,22 +130,35 @@ void processSerialInput(String input) {
     Serial.println("Invalid input format. Use: '0, -30, 45, 0, 10, -10' or 'j0:15'");
   }
 }
-
 void moveJointsSimultaneously() {
+
   for (int i = 0; i < NUM_JOINTS; i++) {
-    if (joints[i].currentAngle < joints[i].targetAngle) {
-      joints[i].currentAngle++;
+    // Check the distance to the target
+    float distance = joints[i].targetAngle - joints[i].currentAngle;
+    
+    // If we are closer than one step size, just snap perfectly to the target
+    if (abs(distance) <= STEP_DEG) {
+      if (joints[i].currentAngle != joints[i].targetAngle) {
+        joints[i].currentAngle = joints[i].targetAngle;
+        setJointAngle(joints[i], joints[i].currentAngle);
+      }
+    } 
+    // Otherwise, step toward the target by the fraction
+    else if (distance > 0) {
+      joints[i].currentAngle += STEP_DEG;
       setJointAngle(joints[i], joints[i].currentAngle);
-    } else if (joints[i].currentAngle > joints[i].targetAngle) {
-      joints[i].currentAngle--;
+    } else {
+      joints[i].currentAngle -= STEP_DEG;
       setJointAngle(joints[i], joints[i].currentAngle);
     }
   }
 
+  // Check if all reached
   if (targetInProgress) {
     bool targetReached = true;
     for (int i = 0; i < NUM_JOINTS; i++) {
-      if (joints[i].currentAngle != joints[i].targetAngle) {
+      // Use a small threshold (0.01) instead of exact != for floats
+      if (abs(joints[i].currentAngle - joints[i].targetAngle) > 0.005) {
         targetReached = false;
         break;
       }

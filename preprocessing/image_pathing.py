@@ -97,10 +97,10 @@ def create_robot_paths(img_path: Path) -> np.array:
         approx = cv2.approxPolyDP(contour, epsilon, closed=False)
         corners = approx.reshape(-1, 2)
         if len(corners) > 2:
-            clean_corners = filter_close_points(corners, min_dist=5.0)
+            clean_corners = filter_close_points(corners, min_dist=20.0)
             
             if len(clean_corners) >= 2:
-                dense_path = interpolate_path(clean_corners, step_size=10.0)
+                dense_path = interpolate_path(clean_corners, step_size=5.0)
 
                 if not is_duplicate_path(dense_path, robot_paths):
                     robot_paths.append(dense_path)

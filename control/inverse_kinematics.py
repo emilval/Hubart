@@ -12,7 +12,7 @@ chain = Chain(
         OriginLink(),
         URDFLink(
             name="base_joint",
-            origin_translation=[0, 0, 0],
+            origin_translation=[0, 0, 0.055],
             origin_orientation=[0, 0, 0],
             rotation=[0, 0, 1],
             bounds=(-np.pi / 2, np.pi / 2),
@@ -22,7 +22,7 @@ chain = Chain(
             origin_translation=[L6, -L4, L2 + L3],
             origin_orientation=[np.pi/2, -np.pi/2, 0],
             rotation=[0, 0, 1],
-            bounds=(-np.pi / 2, np.pi / 4),
+            bounds=(-np.pi / 2, np.pi / 3),
         ),
         URDFLink(   
             name="elbow_joint",
@@ -33,7 +33,7 @@ chain = Chain(
         ),
         URDFLink(
             name="gripper_joint",
-            origin_translation=[0, -L9-0.17, 0],
+            origin_translation=[0, -L9-0.12, 0],
             origin_orientation=[0, 0, 0],
             rotation=None,
             joint_type="fixed",
@@ -42,15 +42,30 @@ chain = Chain(
     active_links_mask=[False, True, True, True, False],
 )
 
+strict_options = {
+    "max_iter": 1000,
+    "ftol": 1e-9,
+    "eps": 1e-6
+}
 
-def get_servo_angles(target_position):
-    """Calculates IK solution and maps joint angles to 0-180° servo degrees."""
-    raw_ik_angles = chain.inverse_kinematics(target_position)
-    raw_degrees = np.degrees(raw_ik_angles[1:4])  # [base, shoulder, elbow]
+def get_servo_angles(target_position, previous_angles):
+    """Calculate IK solution and return the 3 joint angles in degrees."""
 
-    # Map relative angles centered around 90° home position
-    base_angle = raw_degrees[0]
-    shoulder_angle = raw_degrees[1]
-    elbow_angle = raw_degrees[2]
+    # IKPy needs one starting angle for every link.
+    starting_angles = np.zeros(len(chain.links))
 
-    return base_angle, shoulder_angle, elbow_angle
+    # previous_angles are base/shoulder/elbow in degrees.
+    # IKPy uses radians.
+    starting_angles[1:4] = np.radians(previous_angles)
+
+    raw_ik_angles = chain.inverse_kinematics(
+        target_position,
+        initial_position=starting_angles, 
+        optimizer_budget=1000,
+        tol=1e-6,
+    )
+
+    # Extract base, shoulder and elbow.
+    raw_degrees = np.degrees(raw_ik_angles[1:4])
+
+    return tuple(raw_degrees)
