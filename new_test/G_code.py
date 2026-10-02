@@ -103,16 +103,19 @@ def draw_svg_with_robot(svg_file, port, baudrate=115200):
     print(f"3. Attempting to connect to the robot arm ({port})...")
     try:
         ser = serial.Serial(port, baudrate, timeout=2)
+        ser.setDTR(False)
+        ser.setRTS(False)
+        time.sleep(0.1)
+        ser.setDTR(True)
+        ser.setRTS(True)
+        
+        # give ESP32 two seconds to reset and initialize
         time.sleep(2) 
+        ser.reset_input_buffer()
+        
     except Exception as e:
         print(f"Failed to open serial port: {e}")
         return
-
-    # Wait for handshake
-    while True:
-        line = ser.readline().decode('utf-8').strip()
-        if "System Ready" in line:
-            break
             
     print("Robot arm is ready. Starting to send trajectory!")
     
