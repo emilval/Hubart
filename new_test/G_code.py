@@ -82,57 +82,56 @@ def draw_svg_with_robot(svg_file, port, baudrate=115200):
     print("1. Discretizing SVG paths...")
     raw_paths = parse_svg_to_waypoints(svg_file)
     
-    # Get the bounding box of the original graphic for coordinate mapping
     all_x = np.concatenate([p[0] for p in raw_paths])
     all_y = np.concatenate([p[1] for p in raw_paths])
     min_x, max_x = np.min(all_x), np.max(all_x)
     min_y, max_y = np.min(all_y), np.max(all_y)
     
-    print("2. Mapping image coordinates to the robot workspace (unit: meters)...")
-    # Define a safe drawing area in front of the robot arm (e.g., 0.2-0.3 m from the base front edge, 0.2 m wide left to right)
-    robot_x_min, robot_x_max = 0.20, 0.30 
-    robot_y_min, robot_y_max = -0.10, 0.10
+    print("2. Mapping image coordinates to a VERTICAL WALL (YZ Plane)...")
+    # define the fixed depth (X-axis) for the robotic arm to the wall (unit: meters). Adjust this value based on your physical drawing board's distance.
+    WALL_X = 0.28 
+    
+    robot_y_min, robot_y_max = -0.10, 0.10  # the length between -0.10 and 0.10 meters
+    robot_z_min, robot_z_max = 0.25, 0.45   # the height between 0.25 and 0.45 meters 
     
     mapped_paths = []
     for (rx, ry) in raw_paths:
-        # Linearly map image coordinates to the physical workspace
-        mx = np.interp(rx, [min_x, max_x], [robot_x_min, robot_x_max])
-        my = np.interp(ry, [min_y, max_y], [robot_y_min, robot_y_max])
-        mapped_paths.append((mx, my))
+        # map X (width) to the robot's Y (left-right)
+        my = np.interp(rx, [min_x, max_x], [robot_y_min, robot_y_max])
+        # map the image's Y (height) to the robot's Z (up-down)
+        mz = np.interp(ry, [min_y, max_y], [robot_z_min, robot_z_max])
+        mapped_paths.append((my, mz))
 
-    print(f"3. Attempting to connect to the robot arm ({port})...")
+    print(f"3. Attempting to connect to robotic arm ({port})...")
     try:
         ser = serial.Serial(port, baudrate, timeout=2)
+        # force DTR/RTS signals to reset the ESP32 hardware, avoiding lockup
         ser.setDTR(False)
         ser.setRTS(False)
         time.sleep(0.1)
         ser.setDTR(True)
         ser.setRTS(True)
-        
-        # give ESP32 two seconds to reset and initialize
         time.sleep(2) 
         ser.reset_input_buffer()
-        
     except Exception as e:
         print(f"Failed to open serial port: {e}")
         return
-            
-    print("Robot arm is ready. Starting to send trajectory!")
+
+    print("Robotic arm is ready, starting to send trajectory!")
     
-    Z_DRAW = 0.329 # Set pen-down height (m) (adjust according to the previous problem's calculation or measured height)
-    
-    for path_idx, (path_x, path_y) in enumerate(mapped_paths):
+    for path_idx, (path_y, path_z) in enumerate(mapped_paths):
         print(f"--> Drawing path {path_idx + 1}/{len(mapped_paths)}...")
         
-        Z_path = np.full_like(path_x, Z_DRAW)
-        t1, t2, t3 = calculate_ik(path_x, path_y, Z_path)
+        # X axis (depth) becomes a fixed array
+        X_path = np.full_like(path_y, WALL_X)
         
-        for i in range(len(path_x)):
-            # Here you can add extra serial commands to control the gripper servo to implement "pen up" and "pen down"
-            command = f"<{t1[i]:.2f},{t2[i]:.2f},{t3[i]:.2f}>"
+        # Pass in X(fixed), Y(variable), Z(variable) for inverse kinematics solving
+        t1, t2, t3 = calculate_ik(X_path, path_y, path_z)
+        
+        for i in range(len(path_y)):
+            command = f"<{t1[i]:.2f},{t2[i]:.2f},{t3[i]:.2f}>\n"
             ser.write(command.encode('utf-8'))
             
-            # Block and wait for the microcontroller to respond with "READY"
             while True:
                 response = ser.readline().decode('utf-8').strip()
                 if response == "READY":
