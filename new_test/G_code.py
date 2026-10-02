@@ -139,4 +139,4 @@ def draw_svg_with_robot(svg_file, port, baudrate=115200):
     ser.close()
 
 if __name__ == "__main__":
-    draw_svg_with_robot("smartphone.svg", "COM3")
+    draw_svg_with_robot("square.svg", "COM4")
