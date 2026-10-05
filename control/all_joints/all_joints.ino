@@ -9,8 +9,8 @@ const int PERIOD_50HZ = 20000;
 const int PERIOD_330HZ = 3030;
 const int STEP_DELAY_MS = 10;
 const int HOME_OFFSET = 90;
-const int NUM_JOINTS = 6;
-const float STEP_PULSE_US = 15.0; // The max microseconds to move per 10ms loop. Adjust for speed!
+const int NUM_JOINTS = 5;
+const float STEP_PULSE_US = 20.0; // The max microseconds to move per 10ms loop. Adjust for speed!
 
 struct Joint {
   const char* name;
@@ -30,11 +30,72 @@ Joint joints[NUM_JOINTS] = {
   {"shoulder_joint",   &pwm330, 1, PERIOD_330HZ, 930,  2910, 90, 90},
   {"elbow_joint",      &pwm50,  2, PERIOD_50HZ,  450,  2480, 90, 90},
   {"neck_joint",       &pwm50,  0, PERIOD_50HZ,  770,  2270, 90, 90},
-  {"head_turn_joint",  &pwm50,  1, PERIOD_50HZ,  460,  2440, 90, 90},
-  {"gripper_joint",    &pwm50,  4, PERIOD_50HZ,  780,  1820, 90, 90}
+  {"head_turn_joint",  &pwm50,  1, PERIOD_50HZ,  460,  2440, 90, 90}
 };
 
 bool targetInProgress = false;
+float angleToPulse(const Joint &j, float angleDeg);
+void moveJointsSimultaneously();
+
+void setTargetAnglesFromArray(const float targetAngles[NUM_JOINTS]) {
+  for (int i = 0; i < NUM_JOINTS; i++) {
+    float userAngle = constrain(targetAngles[i], -90.0, 90.0);
+    joints[i].targetAngle = userAngle + HOME_OFFSET;
+    joints[i].targetPulseUs = angleToPulse(joints[i], joints[i].targetAngle);
+  }
+  targetInProgress = true;
+}
+
+void processBufferedPointSet(String payload) {
+  int pointStart = 0;
+  int processedCount = 0;
+
+  while (pointStart <= payload.length()) {
+    int pointEnd = payload.indexOf(';', pointStart);
+    if (pointEnd < 0) pointEnd = payload.length();
+
+    String pointToken = payload.substring(pointStart, pointEnd);
+    pointToken.trim();
+
+    if (pointToken.length() > 0) {
+      float pointAngles[NUM_JOINTS] = {0.0, 0.0, 0.0, 0.0, 0.0};
+      int parsedCount = 0;
+      int valueStart = 0;
+
+      for (int i = 0; i <= pointToken.length(); i++) {
+        if (i == pointToken.length() || pointToken.charAt(i) == ',') {
+          if (i > valueStart) {
+            String token = pointToken.substring(valueStart, i);
+            token.trim();
+            if (token.length() > 0 && parsedCount < NUM_JOINTS) {
+              pointAngles[parsedCount++] = token.toFloat();
+            }
+          }
+          valueStart = i + 1;
+        }
+      }
+
+      if (parsedCount == NUM_JOINTS) {
+        setTargetAnglesFromArray(pointAngles);
+        while (targetInProgress) {
+          moveJointsSimultaneously();
+          delay(STEP_DELAY_MS);
+        }
+        processedCount++;
+      } else {
+        Serial.print("Skipped malformed buffered point: ");
+        Serial.println(pointToken);
+      }
+    }
+
+    if (pointEnd >= payload.length()) break;
+    pointStart = pointEnd + 1;
+  }
+
+  Serial.print("BUFFER_DONE: ");
+  Serial.print(processedCount);
+  Serial.println(" points processed");
+}
 
 // 1. Convert user degrees to precise microseconds
 float angleToPulse(const Joint &j, float angleDeg) {
@@ -103,7 +164,19 @@ void processSerialInput(String input) {
   input.trim();
   if (input.length() == 0) return;
 
-  // Option A: Single joint command (e.g. "j0:15" or "j2:-30")
+  // Option A: Buffered point list command (e.g. "B:0,-30,45,0,10,-10;1,-20,40,0,0,0")
+  if (input.startsWith("B:") || input.startsWith("P:")) {
+    String payload = input.substring(2);
+    payload.trim();
+    if (payload.length() > 0) {
+      processBufferedPointSet(payload);
+    } else {
+      Serial.println("Empty point buffer.");
+    }
+    return;
+  }
+
+  // Option B: Single joint command (e.g. "j0:15" or "j2:-30")
   if (input.startsWith("j") || input.startsWith("J")) {
     int colonIdx = input.indexOf(':');
     if (colonIdx > 1) {
@@ -133,7 +206,7 @@ void processSerialInput(String input) {
     return;
   }
 
-  // Option C: 6 comma- or space-separated values (e.g., "0, -20, 45, 0, 0, 10")
+  // Option C: 5 comma- or space-separated values (e.g., "0, -20, 45, 0, 10")
   int parsedCount = 0;
   int startIdx = 0;
 
@@ -162,9 +235,9 @@ void processSerialInput(String input) {
   } else if (parsedCount > 0) {
     Serial.print("Updated ");
     Serial.print(parsedCount);
-    Serial.println(" joint(s). Expected 6 values.");
+    Serial.println(" joint(s). Expected 5 values.");
   } else {
-    Serial.println("Invalid input format. Use: '0, -30, 45, 0, 10, -10' or 'j0:15'");
+    Serial.println("Invalid input format. Use: '0, -30, 45, 0, 10' or 'j0:15'");
   }
 }
 

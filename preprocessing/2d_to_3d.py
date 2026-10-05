@@ -1,7 +1,7 @@
 import numpy as np
 
 #1024x2024
-scale = 0.297 / 2024 * 0.7#scale image to fit on a4
+scale = 0.297 / 2024 * 1#scale image to fit on a4
 
 # tv demo x,y,z = 0.28, -0.05, 0.3 ish, +-1-2cm
 
