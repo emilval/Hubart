@@ -12,8 +12,6 @@ const int HOME_OFFSET = 90;
 const int NUM_JOINTS = 6;
 const float STEP_DEG = 0.5;
 
-
-
 struct Joint {
   const char* name;
   Adafruit_PWMServoDriver* driver;
@@ -44,7 +42,7 @@ void setJointAngle(Joint &j, float angleDeg) {
   float centerPulseUs = (j.minPulseUs + j.maxPulseUs) / 2.0;
   float pulseUs;
   
-  // Float equivalent of your piecewise map() logic
+  // Piecewise mapping relative to home center
   if (angleDeg <= 90.0) {
     pulseUs = j.minPulseUs + (angleDeg / 90.0) * (centerPulseUs - j.minPulseUs);
   } else {
@@ -59,7 +57,7 @@ void setJointAngle(Joint &j, float angleDeg) {
 void printStatus() {
   Serial.println("\n--- Current Joint Positions ---");
   for (int i = 0; i < NUM_JOINTS; i++) {
-    int userAngle = joints[i].targetAngle - HOME_OFFSET;
+    int userAngle = (int)round(joints[i].currentAngle - HOME_OFFSET);
     Serial.print("  [");
     Serial.print(i);
     Serial.print("] ");
@@ -84,6 +82,7 @@ void processSerialInput(String input) {
       if (jointIdx >= 0 && jointIdx < NUM_JOINTS) {
         angleVal = constrain(angleVal, -90, 90);
         joints[jointIdx].targetAngle = angleVal + HOME_OFFSET;
+        targetInProgress = true;
         Serial.print("Updated ");
         Serial.print(joints[jointIdx].name);
         Serial.print(" target to ");
@@ -130,44 +129,54 @@ void processSerialInput(String input) {
     Serial.println("Invalid input format. Use: '0, -30, 45, 0, 10, -10' or 'j0:15'");
   }
 }
+
 void moveJointsSimultaneously() {
+  if (!targetInProgress) return;
+
+  // 1. Calculate required displacement for all joints and find max distance
+  float maxDistance = 0.0;
+  float distances[NUM_JOINTS];
 
   for (int i = 0; i < NUM_JOINTS; i++) {
-    // Check the distance to the target
-    float distance = joints[i].targetAngle - joints[i].currentAngle;
-    
-    // If we are closer than one step size, just snap perfectly to the target
-    if (abs(distance) <= STEP_DEG) {
+    distances[i] = joints[i].targetAngle - joints[i].currentAngle;
+    float absDist = abs(distances[i]);
+    if (absDist > maxDistance) {
+      maxDistance = absDist;
+    }
+  }
+
+  // 2. Check if movement completed across all joints
+  if (maxDistance <= 0.01) {
+    for (int i = 0; i < NUM_JOINTS; i++) {
       if (joints[i].currentAngle != joints[i].targetAngle) {
         joints[i].currentAngle = joints[i].targetAngle;
         setJointAngle(joints[i], joints[i].currentAngle);
       }
-    } 
-    // Otherwise, step toward the target by the fraction
-    else if (distance > 0) {
-      joints[i].currentAngle += STEP_DEG;
-      setJointAngle(joints[i], joints[i].currentAngle);
-    } else {
-      joints[i].currentAngle -= STEP_DEG;
-      setJointAngle(joints[i], joints[i].currentAngle);
     }
+    targetInProgress = false;
+    Serial.println("TARGET_REACHED");
+    return;
   }
 
-  // Check if all reached
-  if (targetInProgress) {
-    bool targetReached = true;
-    for (int i = 0; i < NUM_JOINTS; i++) {
-      // Use a small threshold (0.01) instead of exact != for floats
-      if (abs(joints[i].currentAngle - joints[i].targetAngle) > 0.005) {
-        targetReached = false;
-        break;
-      }
+  // 3. Step each joint scaled proportionally to maxDistance
+  for (int i = 0; i < NUM_JOINTS; i++) {
+    if (abs(distances[i]) <= 0.01) {
+      continue;
     }
 
-    if (targetReached) {
-      targetInProgress = false;
-      Serial.println("TARGET_REACHED");
+    // Scale step size so every joint takes the same total steps to reach its destination
+    float stepSize = STEP_DEG * (abs(distances[i]) / maxDistance);
+
+    // Prevent overshoot
+    if (abs(distances[i]) <= stepSize) {
+      joints[i].currentAngle = joints[i].targetAngle;
+    } else if (distances[i] > 0) {
+      joints[i].currentAngle += stepSize;
+    } else {
+      joints[i].currentAngle -= stepSize;
     }
+
+    setJointAngle(joints[i], joints[i].currentAngle);
   }
 }
 
@@ -176,35 +185,4 @@ void setup() {
 
   // Initialize hardware PWM drivers
   pwm50.begin();
-  pwm50.setPWMFreq(50);
-  pwm330.begin();
-  pwm330.setPWMFreq(330);
-  delay(100);
-
-  // Move joints to home position initially
-  for (int i = 0; i < NUM_JOINTS; i++) {
-    setJointAngle(joints[i], joints[i].currentAngle);
-  }
-
-  Serial.println("=========================================");
-  Serial.println(" HUBERT 6-DOF Manual Serial Angle Control");
-  Serial.println("=========================================");
-  Serial.println("Commands:");
-  Serial.println("  1. Enter 6 angles (-90 to +90): e.g. '0, -30, 45, 0, 10, -10'");
-  Serial.println("  2. Single joint update: e.g. 'j0:15' or 'j2:-45'");
-  Serial.println("  3. Type '?' to view current joint angles");
-  Serial.println("=========================================");
-}
-
-void loop() {
-  // Read Serial commands from user
-  if (Serial.available() > 0) {
-    String input = Serial.readStringUntil('\n');
-    processSerialInput(input);
-  }
-
-  // Smoothly step servos toward target position
-  moveJointsSimultaneously();
-
-  delay(STEP_DELAY_MS);
-}
+  pwm50.set
