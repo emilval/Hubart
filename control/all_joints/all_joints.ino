@@ -10,7 +10,7 @@ const int PERIOD_330HZ = 3030;
 const int STEP_DELAY_MS = 10;
 const int HOME_OFFSET = 90;
 const int NUM_JOINTS = 6;
-const float STEP_DEG = 0.5;
+const float STEP_PULSE_US = 15.0; // The max microseconds to move per 10ms loop. Adjust for speed!
 
 struct Joint {
   const char* name;
@@ -19,8 +19,10 @@ struct Joint {
   int periodUs;
   int minPulseUs;
   int maxPulseUs;
-  float currentAngle; // Physical 0 - 180 degrees
-  float targetAngle;  // Physical 0 - 180 degrees
+  float currentAngle;    // Physical 0 - 180 degrees (used for serial status)
+  float targetAngle;     // Physical 0 - 180 degrees (used for serial target)
+  float currentPulseUs;  // HIGH-RES: Current physical position
+  float targetPulseUs;   // HIGH-RES: Target physical position
 };
 
 Joint joints[NUM_JOINTS] = {
@@ -33,6 +35,34 @@ Joint joints[NUM_JOINTS] = {
 };
 
 bool targetInProgress = false;
+
+// 1. Convert user degrees to precise microseconds
+float angleToPulse(const Joint &j, float angleDeg) {
+  float constrainedAngle = constrain(angleDeg, 0.0, 180.0);
+  float centerPulseUs = (j.minPulseUs + j.maxPulseUs) / 2.0;
+  
+  if (constrainedAngle <= 90.0) {
+    return j.minPulseUs + (constrainedAngle / 90.0) * (centerPulseUs - j.minPulseUs);
+  } else {
+    return centerPulseUs + ((constrainedAngle - 90.0) / 90.0) * (j.maxPulseUs - centerPulseUs);
+  }
+}
+
+// 2. Convert microseconds back to degrees (for the ? status command)
+float pulseToAngle(const Joint &j, float pulseUs) {
+  float centerPulseUs = (j.minPulseUs + j.maxPulseUs) / 2.0;
+  if (pulseUs <= centerPulseUs) {
+     return 90.0 * (pulseUs - j.minPulseUs) / (centerPulseUs - j.minPulseUs);
+  } else {
+     return 90.0 + 90.0 * (pulseUs - centerPulseUs) / (j.maxPulseUs - centerPulseUs);
+  }
+}
+
+// 3. Send the exact pulse to the PCA9685 driver
+void applyPulse(const Joint &j, float pulseUs) {
+  int pwmValue = (int)((pulseUs / (float)j.periodUs) * 4096.0);
+  j.driver->setPWM(j.channel, 0, pwmValue);
+}
 
 void setJointAngle(Joint &j, float angleDeg) {
   // Constrain between 0.0 and 180.0
@@ -82,6 +112,10 @@ void processSerialInput(String input) {
       if (jointIdx >= 0 && jointIdx < NUM_JOINTS) {
         angleVal = constrain(angleVal, -90, 90);
         joints[jointIdx].targetAngle = angleVal + HOME_OFFSET;
+        
+        // ADDED HERE: Calculate the target pulse for the single joint
+        joints[jointIdx].targetPulseUs = angleToPulse(joints[jointIdx], joints[jointIdx].targetAngle); 
+        
         targetInProgress = true;
         Serial.print("Updated ");
         Serial.print(joints[jointIdx].name);
@@ -111,6 +145,10 @@ void processSerialInput(String input) {
         if (token.length() > 0 && parsedCount < NUM_JOINTS) {
           int userAngle = constrain(token.toInt(), -90, 90);
           joints[parsedCount].targetAngle = userAngle + HOME_OFFSET;
+          
+          // ADDED HERE: Calculate the target pulse using parsedCount
+          joints[parsedCount].targetPulseUs = angleToPulse(joints[parsedCount], joints[parsedCount].targetAngle); 
+          
           parsedCount++;
         }
       }
@@ -118,7 +156,7 @@ void processSerialInput(String input) {
     }
   }
 
-  if (parsedCount == NUM_JOINTS) {
+  if (parsedCount == NUM_JOINTS) {  
     targetInProgress = true;
     Serial.println("Successfully updated all 6 joint target angles.");
   } else if (parsedCount > 0) {
@@ -133,50 +171,50 @@ void processSerialInput(String input) {
 void moveJointsSimultaneously() {
   if (!targetInProgress) return;
 
-  // 1. Calculate required displacement for all joints and find max distance
-  float maxDistance = 0.0;
-  float distances[NUM_JOINTS];
+  float maxDistanceUs = 0.0;
+  float distancesUs[NUM_JOINTS];
 
+  // 1. Calculate required high-res displacement
   for (int i = 0; i < NUM_JOINTS; i++) {
-    distances[i] = joints[i].targetAngle - joints[i].currentAngle;
-    float absDist = abs(distances[i]);
-    if (absDist > maxDistance) {
-      maxDistance = absDist;
+    distancesUs[i] = joints[i].targetPulseUs - joints[i].currentPulseUs;
+    float absDist = abs(distancesUs[i]);
+    if (absDist > maxDistanceUs) {
+      maxDistanceUs = absDist;
     }
   }
 
-  // 2. Check if movement completed across all joints
-  if (maxDistance <= 0.01) {
+  // 2. Check if movement is practically complete (within half a microsecond)
+  if (maxDistanceUs <= 0.5) {
     for (int i = 0; i < NUM_JOINTS; i++) {
-      if (joints[i].currentAngle != joints[i].targetAngle) {
-        joints[i].currentAngle = joints[i].targetAngle;
-        setJointAngle(joints[i], joints[i].currentAngle);
-      }
+      joints[i].currentPulseUs = joints[i].targetPulseUs;
+      joints[i].currentAngle = joints[i].targetAngle; // sync the display variable
+      applyPulse(joints[i], joints[i].currentPulseUs);
     }
     targetInProgress = false;
     Serial.println("TARGET_REACHED");
     return;
   }
 
-  // 3. Step each joint scaled proportionally to maxDistance
+  // 3. Step each joint scaled proportionally in microsecond space
   for (int i = 0; i < NUM_JOINTS; i++) {
-    if (abs(distances[i]) <= 0.01) {
-      continue;
-    }
+    if (abs(distancesUs[i]) <= 0.5) continue;
 
-    // Scale step size so every joint takes the same total steps to reach its destination
-    float stepSize = STEP_DEG * (abs(distances[i]) / maxDistance);
+    // Scale step size so every joint takes the same time to finish
+    float stepSizeUs = STEP_PULSE_US * (abs(distancesUs[i]) / maxDistanceUs);
 
-    // Prevent overshoot
-    if (abs(distances[i]) <= stepSize) {
-      joints[i].currentAngle = joints[i].targetAngle;
-    } else if (distances[i] > 0) {
-      joints[i].currentAngle += stepSize;
+    // Apply the micro-step
+    if (abs(distancesUs[i]) <= stepSizeUs) {
+      joints[i].currentPulseUs = joints[i].targetPulseUs;
+    } else if (distancesUs[i] > 0) {
+      joints[i].currentPulseUs += stepSizeUs;
     } else {
-      joints[i].currentAngle -= stepSize;
+      joints[i].currentPulseUs -= stepSizeUs;
     }
 
-    setJointAngle(joints[i], joints[i].currentAngle);
+    applyPulse(joints[i], joints[i].currentPulseUs);
+    
+    // Sync the readable angle for the status command mid-move
+    joints[i].currentAngle = pulseToAngle(joints[i], joints[i].currentPulseUs);
   }
 }
 
@@ -192,7 +230,9 @@ void setup() {
 
   // Move joints to home position initially
   for (int i = 0; i < NUM_JOINTS; i++) {
-    setJointAngle(joints[i], joints[i].currentAngle);
+    joints[i].currentPulseUs = angleToPulse(joints[i], joints[i].currentAngle);
+    joints[i].targetPulseUs = joints[i].currentPulseUs;
+    applyPulse(joints[i], joints[i].currentPulseUs);
   }
 
   Serial.println("=========================================");
