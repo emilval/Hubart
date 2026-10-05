@@ -185,4 +185,35 @@ void setup() {
 
   // Initialize hardware PWM drivers
   pwm50.begin();
-  pwm50.set
+  pwm50.setPWMFreq(50);
+  pwm330.begin();
+  pwm330.setPWMFreq(330);
+  delay(100);
+
+  // Move joints to home position initially
+  for (int i = 0; i < NUM_JOINTS; i++) {
+    setJointAngle(joints[i], joints[i].currentAngle);
+  }
+
+  Serial.println("=========================================");
+  Serial.println(" HUBERT 6-DOF Manual Serial Angle Control");
+  Serial.println("=========================================");
+  Serial.println("Commands:");
+  Serial.println("  1. Enter 6 angles (-90 to +90): e.g. '0, -30, 45, 0, 10, -10'");
+  Serial.println("  2. Single joint update: e.g. 'j0:15' or 'j2:-45'");
+  Serial.println("  3. Type '?' to view current joint angles");
+  Serial.println("=========================================");
+}
+
+void loop() {
+  // Read Serial commands from user
+  if (Serial.available() > 0) {
+    String input = Serial.readStringUntil('\n');
+    processSerialInput(input);
+  }
+
+  // Smoothly step servos toward target position synchronously
+  moveJointsSimultaneously();
+
+  delay(STEP_DELAY_MS);
+}
