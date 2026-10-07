@@ -77,36 +77,92 @@ def is_duplicate_path(new_path, existing_paths, threshold=5.0):
             return True
             
     return False
-
-def create_robot_paths(img_path: Path) -> np.array:
+def create_robot_paths(img_path: Path) -> list:
     """
-    Produces an array of arrays, where each array is a pen stroke. Epsilon controls
-    the amount of substrokes within each stroke.
+    Extracts single-stroke paths by walking directly along the skeleton pixels.
+    Bypasses cv2.findContours to avoid tracing the outside of lines.
     """
-
-    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+    img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
     _, binary = cv2.threshold(img, 127, 1, cv2.THRESH_BINARY_INV)
+    
+    # Create the 1-pixel wide skeleton
     skeleton = skeletonize(binary)
-
     skeleton_img = (skeleton * 255).astype(np.uint8)
-    contours, _ = cv2.findContours(skeleton_img, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+    
+    h, w = skeleton_img.shape
+    visited = np.zeros_like(skeleton_img, dtype=bool)
+    
+    def get_neighbors(x, y):
+        """Find adjacent unvisited pixels (8-way connected)."""
+        neighbors = []
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx == 0 and dy == 0: 
+                    continue
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < w and 0 <= ny < h:
+                    if skeleton_img[ny, nx] > 0 and not visited[ny, nx]:
+                        neighbors.append((nx, ny))
+        return neighbors
+
+    raw_paths = []
+    
+    # Scan the image for any unvisited skeleton pixels
+    for y in range(h):
+        for x in range(w):
+            if skeleton_img[y, x] > 0 and not visited[y, x]:
+                
+                path = [(x, y)]
+                visited[y, x] = True
+                
+                # Walk forward as far as possible
+                curr_x, curr_y = x, y
+                while True:
+                    neighbors = get_neighbors(curr_x, curr_y)
+                    if not neighbors:
+                        break
+                    # Greedily pick the first available path
+                    nx, ny = neighbors[0]
+                    path.append((nx, ny))
+                    visited[ny, nx] = True
+                    curr_x, curr_y = nx, ny
+                    
+                # Because we may have started in the middle of a line, 
+                # we must also walk backwards from the initial starting point.
+                curr_x, curr_y = x, y
+                path_backward = []
+                while True:
+                    neighbors = get_neighbors(curr_x, curr_y)
+                    if not neighbors:
+                        break
+                    nx, ny = neighbors[0]
+                    path_backward.append((nx, ny))
+                    visited[ny, nx] = True
+                    curr_x, curr_y = nx, ny
+                    
+                # Stitch the backward and forward paths together
+                full_path = path_backward[::-1] + path
+                
+                if len(full_path) > 2:
+                    raw_paths.append(np.array(full_path, dtype=np.int32))
 
     robot_paths = []
-    for contour in contours:
-        epsilon = min(max(0.002 * cv2.arcLength(contour, closed=False), 1.0), 3.0)
-        approx = cv2.approxPolyDP(contour, epsilon, closed=False)
+    for path in raw_paths:
+        # Simplify the raw pixel path into geometric lines/corners
+        # Increase epsilon (e.g., 3.0 or 4.0) for fewer points, decrease for curves
+        epsilon = 2.0 
+        approx = cv2.approxPolyDP(path, epsilon, closed=False)
         corners = approx.reshape(-1, 2)
-        if len(corners) > 2:
-            clean_corners = filter_close_points(corners, min_dist=20.0)
-            
+        
+        # Apply your original filters and interpolations to the clean corners
+        if len(corners) >= 2:
+            clean_corners = filter_close_points(corners, min_dist=5.0)
             if len(clean_corners) >= 2:
                 dense_path = interpolate_path(clean_corners, step_size=5.0)
-
-                if not is_duplicate_path(dense_path, robot_paths):
-                    robot_paths.append(dense_path)
+                robot_paths.append(dense_path)
+                
     print(f"Success! Extracted {len(robot_paths)} single-stroke paths for the robot.")
     return robot_paths
-
 
 
 
@@ -190,16 +246,152 @@ def plot_robot_paths_animated(robot_paths: list) -> None:
         fig, 
         update, 
         frames=frames, 
-        interval=200, 
+        interval=100, 
         blit=True, 
         repeat=False
     )
-
+    print("Done!")
     plt.show()
+
+
+
+def sort_paths_optimized(robot_paths: list) -> list:
+    """
+    Sorts a list of paths to minimize travel distance.
+    Checks both the start and end points of unvisited paths, 
+    reversing the stroke direction if the end point is closer.
+    """
+    if not robot_paths:
+        return []
+
+    # Start with the first path in the list
+    unvisited = robot_paths[1:]
+    sorted_paths = [robot_paths[0]]
+    
+    # The current position is the end of the very first stroke
+    current_pos = sorted_paths[-1][-1]
+
+    while unvisited:
+        best_idx = 0
+        min_dist = float('inf')
+        reverse_path = False
+        
+        # Check all unvisited paths to find the closest start OR end point
+        for i, path in enumerate(unvisited):
+            start_point = path[0]
+            end_point = path[-1]
+            
+            # Distance to the start of the path
+            dist_to_start = np.linalg.norm(start_point - current_pos)
+            # Distance to the end of the path
+            dist_to_end = np.linalg.norm(end_point - current_pos)
+            
+            # Check if start is closest
+            if dist_to_start < min_dist:
+                min_dist = dist_to_start
+                best_idx = i
+                reverse_path = False
+                
+            # Check if end is closest
+            if dist_to_end < min_dist:
+                min_dist = dist_to_end
+                best_idx = i
+                reverse_path = True
+                
+        # Pop the best path from unvisited
+        next_path = unvisited.pop(best_idx)
+        
+        # If the end point was closer, flip the path array so we draw it backwards
+        if reverse_path:
+            next_path = next_path[::-1]
+            
+        sorted_paths.append(next_path)
+        
+        # Update our current position to the new end of this stroke
+        current_pos = next_path[-1]
+
+    return sorted_paths
+
+
+def remove_retraced_segments(robot_paths: list, step_size: float = 5.0) -> list:
+    """
+    Prevents the robot from drawing over the exact same lines twice (retracing).
+    Allows lines to cross (intersections) or share starting points without breaking.
+    """
+    cleaned_paths = []
+    drawn_pixels = set()
+    
+    # How many consecutive overlapping points count as a "retrace" vs a "crossing".
+    # 4 points * 5 step_size = 20 pixels of allowed overlap for intersections.
+    intersection_tolerance = 4 
+    
+    # We mark a 5x5 pixel area around each drawn point.
+    # Because step_size is 5.0, this creates a solid "drawn mask" in our memory.
+    radius = 2 
+
+    def mark_drawn(point):
+        x, y = int(point[0]), int(point[1])
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                drawn_pixels.add((x + dx, y + dy))
+
+    for path in robot_paths:
+        if len(path) == 0:
+            continue
+            
+        # Step 1: Identify which points in this stroke overlap with already drawn areas
+        overlaps = []
+        for pt in path:
+            x, y = int(pt[0]), int(pt[1])
+            overlaps.append((x, y) in drawn_pixels)
+            
+        # Step 2: Smooth out small overlaps so intersections don't break the continuous line
+        count = 0
+        for i in range(len(overlaps)):
+            if overlaps[i]:
+                count += 1
+            else:
+                if 0 < count <= intersection_tolerance:
+                    # It was a short overlap (a crossing or touch). Revert them to False.
+                    for j in range(i - count, i):
+                        overlaps[j] = False
+                count = 0
+                
+        # Handle the edge case where a line ends exactly on an intersection
+        if 0 < count <= intersection_tolerance:
+            for j in range(len(overlaps) - count, len(overlaps)):
+                overlaps[j] = False
+
+        # Step 3: Split the path, skipping the segments that are already drawn
+        current_subpath = []
+        for pt, is_overlap in zip(path, overlaps):
+            if not is_overlap:
+                current_subpath.append(pt)
+            else:
+                # We hit a drawn area. Save the current stroke if it has at least 2 points.
+                if len(current_subpath) >= 2:
+                    cleaned_paths.append(np.array(current_subpath, dtype=np.int32))
+                    # Mark this new segment as drawn
+                    for p in current_subpath:
+                        mark_drawn(p)
+                current_subpath = [] # Reset for the next segment
+                
+        # Add the final stroke segment if it exists
+        if len(current_subpath) >= 2:
+            cleaned_paths.append(np.array(current_subpath, dtype=np.int32))
+            for p in current_subpath:
+                mark_drawn(p)
+                
+    return cleaned_paths
 
 if __name__ == '__main__': 
     image_path = input("Enter image path:")
     robot_paths = create_robot_paths(image_path)
-    print(robot_paths)
+    print(f"Original paths: {len(robot_paths)}")
+
+    robot_paths = remove_retraced_segments(robot_paths)
+    print(f"Cleaned down to {len(robot_paths)} unique paths.")
+
+    robot_paths = sort_paths_optimized(robot_paths)
     #scatter_plot_robot_paths(robot_paths)
     plot_robot_paths_animated(robot_paths)
