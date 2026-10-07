@@ -26,7 +26,7 @@
 #define TEST_MODULE_330HZ
 
 // Välj servo-kanal (0-15)
-int SERVO_CHANNEL = 1;
+int SERVO_CHANNEL = 0;
 
 // PCA9685 adresser
 const int ADDR_50HZ = 0x40;

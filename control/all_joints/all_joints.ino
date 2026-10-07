@@ -26,7 +26,7 @@ struct Joint {
 };
 
 Joint joints[NUM_JOINTS] = {
-  {"base_joint",       &pwm330, 0, PERIOD_330HZ, 630,  2690, 90, 90},
+  {"base_joint",       &pwm330, 0, PERIOD_330HZ, 710,  2670, 90, 90},
   {"shoulder_joint",   &pwm330, 1, PERIOD_330HZ, 930,  2910, 90, 90},
   {"elbow_joint",      &pwm50,  2, PERIOD_50HZ,  450,  2480, 90, 90},
   {"neck_joint",       &pwm50,  0, PERIOD_50HZ,  770,  2270, 90, 90},
