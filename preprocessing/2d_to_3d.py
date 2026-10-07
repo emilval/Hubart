@@ -1,7 +1,7 @@
 import numpy as np
 
 #1024x2024
-scale = 0.297 / 2024 * 1#scale image to fit on a4
+scale = 0.297 / 2024 * 1 #scale image to fit on a4
 
 # tv demo x,y,z = 0.28, -0.05, 0.3 ish, +-1-2cm
 
@@ -9,7 +9,7 @@ scale = 0.297 / 2024 * 1#scale image to fit on a4
 
 x0 = 0.37 # distance to wall
 # y0 and z0 define the position of the top left corner of the page
-y0 = -0.07
+y0 = -0.075
 z0 = 0.35
 
 # this function assumes that the plane is parallel to the yz-plane

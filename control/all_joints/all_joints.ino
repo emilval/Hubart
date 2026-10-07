@@ -10,7 +10,7 @@ const int PERIOD_330HZ = 3030;
 const int STEP_DELAY_MS = 10;
 const int HOME_OFFSET = 90;
 const int NUM_JOINTS = 5;
-const float STEP_PULSE_US = 20.0; // The max microseconds to move per 10ms loop. Adjust for speed!
+const float STEP_PULSE_US = 5.0; // The max microseconds to move per 10ms loop. Adjust for speed!
 
 struct Joint {
   const char* name;

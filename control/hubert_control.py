@@ -7,7 +7,7 @@ import serial
 PORT = "/dev/ttyACM0"
 BAUD_RATE = 115200
 RESET_DELAY_S = 2.0
-TARGET_TIMEOUT_S = 30.0
+TARGET_TIMEOUT_S = 60.0
 
 
 def send_angles_to_robot(
