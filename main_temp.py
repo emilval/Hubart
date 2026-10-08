@@ -7,7 +7,7 @@ from control.inverse_kinematics import get_servo_angles
 from preprocessing.image_pathing import create_robot_paths
 
 
-IMAGE_PATH = Path(__file__).resolve().parent / "images" / "google_simple_house_0.png"
+IMAGE_PATH = Path(__file__).resolve().parent / "images" / "generated_image.png"
 MAPPING_PATH = Path(__file__).resolve().parent / "preprocessing" / "2d_to_3d.py"
 FIXED_ANGLES = (0, 0, 0)
 COORDINATE_DECIMAL_PLACES = 4
@@ -73,7 +73,7 @@ def map_image_to_3d(image):
 
 def coordinates_to_angles(coordinates):
 	angle_commands = []
-	previous_angles = (0, 0, 0)  
+	previous_angles = (32.4, 50.8, -56.6)  
 	for stroke in coordinates:
 		for point in stroke:
 			servo_angles = get_servo_angles(point, previous_angles)
@@ -82,9 +82,9 @@ def coordinates_to_angles(coordinates):
 	return angle_commands
 
 
-def main(send_to_robot: bool) -> None:
+def draw_image(image_path: Path = IMAGE_PATH, send_to_robot: bool = False) -> None:
 
-	image = create_robot_paths(IMAGE_PATH)
+	image = create_robot_paths(image_path)
 	print("\nIMAGE PATHING - 2D COORDINATES:")
 	for stroke_number, stroke in enumerate(image, start=1):
 		for point_number, point in enumerate(stroke, start=1):
@@ -102,6 +102,10 @@ def main(send_to_robot: bool) -> None:
 		for stroke in map_image_to_3d(image)
 	]
 	print(coordinates)
+
+
+	starting_point_stroke = [(0.35, 0.10, 0.49)]
+	coordinates = [starting_point_stroke, *coordinates]
 	coordinates = add_stroke_transition_points(coordinates)
 
 	print("\n2D TO 3D - TRANSLATED COORDINATES:")
@@ -131,7 +135,7 @@ def main(send_to_robot: bool) -> None:
 			coordinates=flat_coordinates,
 		)
 	else:
-		print("Dry run only. Add --send to control Hubert.")
+		print("Dry run only. Set send_to_robot=True to control Hubert.")
 
 
 if __name__ == "__main__":
@@ -144,7 +148,7 @@ if __name__ == "__main__":
 		help="send the mapped trajectory to Hubert via serial",
 	)
 	args = parser.parse_args()
-	main(args.send)
+	draw_image(IMAGE_PATH, args.send)
 
 # Quick single-target tests used during setup:
 #
