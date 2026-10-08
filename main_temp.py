@@ -7,7 +7,7 @@ from control.inverse_kinematics import get_servo_angles
 from preprocessing.image_pathing import create_robot_paths
 
 
-IMAGE_PATH = Path(__file__).resolve().parent / "images" / "square.png"
+IMAGE_PATH = Path(__file__).resolve().parent / "images" / "google_simple_house_0.png"
 MAPPING_PATH = Path(__file__).resolve().parent / "preprocessing" / "2d_to_3d.py"
 FIXED_ANGLES = (0, 0, 0)
 COORDINATE_DECIMAL_PLACES = 4
