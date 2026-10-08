@@ -1,7 +1,7 @@
 import argparse
 import importlib.util
 from pathlib import Path
-
+import numpy as np
 from control.hubert_control import send_angles_to_robot
 from control.inverse_kinematics import get_servo_angles
 from preprocessing.image_pathing import create_robot_paths
