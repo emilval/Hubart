@@ -13,12 +13,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from control.inverse_kinematics import get_servo_angles
+from control.inverse_kinematics import chain, get_servo_angles
 
 
 A4_WIDTH_M = 0.210
 A4_HEIGHT_M = 0.297
 GRID_STEP_M = 0.01
+POSITION_TOLERANCE_M = 0.005
+JOINT_LIMITS_DEG = ((-90.0, 90.0), (-90.0, 60.0), (-90.0, 90.0))
+MIN_LIMIT_MARGIN_DEG = 5.0
 
 # Keep the same fixed-plane assumption as the current mapping code: points live in a
 # YZ plane with constant X. Search for a plane translation that keeps every A4 point
@@ -68,8 +71,14 @@ def plane_point(u: float, v: float, x0: float, y0: float, z0: float) -> tuple[fl
     return (x, y, z)
 
 
-def evaluate_plane(x0: float, y0: float, z0: float, points: Sequence[tuple[float, float]]) -> tuple[int, float]:
-    """Return (success_count, min_margin_deg) over all A4 points for a candidate plane."""
+def evaluate_plane(
+    x0: float,
+    y0: float,
+    z0: float,
+    points: Sequence[tuple[float, float]],
+    min_limit_margin_deg: float = MIN_LIMIT_MARGIN_DEG,
+) -> tuple[int, float]:
+    """Return safe point count and minimum joint-limit headroom."""
     success_count = 0
     min_margin_deg = float("inf")
 
@@ -84,29 +93,26 @@ def evaluate_plane(x0: float, y0: float, z0: float, points: Sequence[tuple[float
             # If the IK fails for this target, it is outside the solver's reachable workspace.
             continue
 
-        # Check against the joint limits used by the IK model.
-        limits = [
-            (-math.pi / 2, math.pi / 2),
-            (-math.pi / 2, math.pi / 3),
-            (-math.pi / 2, math.pi / 2),
-        ]
+        actual_position = chain.forward_kinematics(
+            [0.0, *np.radians(angles), 0.0]
+        )[:3, 3]
+        position_error = float(np.linalg.norm(actual_position - target))
+        margin = min(
+            min(angle - lower, upper - angle)
+            for angle, (lower, upper) in zip(angles, JOINT_LIMITS_DEG)
+        )
 
-        margin = float("inf")
-        for angle_deg, (lower, upper) in zip(angles, limits):
-            angle_rad = math.radians(angle_deg)
-            if angle_rad < lower:
-                margin = min(margin, abs(angle_rad - lower))
-            elif angle_rad > upper:
-                margin = min(margin, abs(angle_rad - upper))
-
-        if math.isinf(margin):
+        if (
+            position_error <= POSITION_TOLERANCE_M
+            and margin >= min_limit_margin_deg
+        ):
             success_count += 1
-            min_margin_deg = min(min_margin_deg, 9999.0)
-        else:
-            # We allow some margin, but keep the closest bound distance in degrees.
-            min_margin_deg = min(min_margin_deg, math.degrees(margin))
+            min_margin_deg = min(min_margin_deg, margin)
 
         prev = angles
+
+    if math.isinf(min_margin_deg):
+        min_margin_deg = 0.0
 
     return success_count, min_margin_deg
 
@@ -114,13 +120,19 @@ def evaluate_plane(x0: float, y0: float, z0: float, points: Sequence[tuple[float
 def find_best_a4_plane(
     grid_step_m: float = GRID_STEP_M,
     quick: bool = False,
+    broad: bool = False,
+    min_limit_margin_deg: float = MIN_LIMIT_MARGIN_DEG,
 ) -> PlaneCandidate:
     grid = make_a4_grid(step_m=grid_step_m)
     total_points = len(grid)
 
     best: PlaneCandidate | None = None
 
-    if quick:
+    if broad:
+        x_candidates = np.linspace(0.15, 0.55, 9)
+        y_candidates = np.linspace(-0.25, 0.25, 11)
+        z_candidates = np.linspace(0.10, 0.60, 11)
+    elif quick:
         x_candidates = np.linspace(0.20, 0.42, 6)
         y_candidates = np.linspace(-0.10, 0.10, 5)
         z_candidates = np.linspace(0.20, 0.40, 6)
@@ -136,7 +148,13 @@ def find_best_a4_plane(
         for y0 in y_candidates:
             for z0 in z_candidates:
                 checked += 1
-                success_count, min_margin_deg = evaluate_plane(float(x0), float(y0), float(z0), grid)
+                success_count, min_margin_deg = evaluate_plane(
+                    float(x0),
+                    float(y0),
+                    float(z0),
+                    grid,
+                    min_limit_margin_deg=min_limit_margin_deg,
+                )
                 candidate = PlaneCandidate(
                     x0=float(x0),
                     y0=float(y0),
@@ -152,7 +170,8 @@ def find_best_a4_plane(
                 ):
                     best = candidate
 
-                if quick and checked % 20 == 0:
+                progress_interval = 50 if broad else 20
+                if (quick or broad) and checked % progress_interval == 0:
                     print(f"progress: {checked}/{total_candidates} candidates checked")
 
     if best is None:
@@ -164,17 +183,35 @@ def find_best_a4_plane(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Find a reachable fixed-plane mapping for an A4 sheet.")
     parser.add_argument("--quick", action="store_true", help="Use a coarse fast search to print a likely candidate quickly.")
+    parser.add_argument(
+        "--broad",
+        action="store_true",
+        help="Search a wider plane-offset range; pair with a coarse --grid-step such as 0.05.",
+    )
     parser.add_argument("--grid-step", type=float, default=GRID_STEP_M, help="Grid spacing in meters for the A4 search space.")
+    parser.add_argument(
+        "--min-margin",
+        type=float,
+        default=MIN_LIMIT_MARGIN_DEG,
+        help="Required minimum joint-limit headroom in degrees (default: 5).",
+    )
     args = parser.parse_args()
 
-    best = find_best_a4_plane(grid_step_m=args.grid_step, quick=args.quick)
+    best = find_best_a4_plane(
+        grid_step_m=args.grid_step,
+        quick=args.quick,
+        broad=args.broad,
+        min_limit_margin_deg=args.min_margin,
+    )
     print("Best fixed-plane candidate for an A4 sheet:")
     print(f"  x0 = {best.x0:.4f} m")
     print(f"  y0 = {best.y0:.4f} m")
     print(f"  z0 = {best.z0:.4f} m")
-    print(f"  reachable points = {best.success_count}/{best.total_points}")
-    print(f"  success ratio = {best.success_ratio:.2%}")
-    print(f"  min margin to IK limits = {best.min_margin_deg:.3f} deg")
+    print(f"  safe points (>= {args.min_margin:.1f} deg headroom) = {best.success_count}/{best.total_points}")
+    print(f"  safe point ratio = {best.success_ratio:.2%}")
+    print(f"  worst headroom among safe points = {best.min_margin_deg:.3f} deg")
+    if best.success_count < best.total_points:
+        print("  WARNING: this candidate does not keep the whole sheet within the requested safety margin.")
 
     sample_points = [
         (0.0, 0.0),

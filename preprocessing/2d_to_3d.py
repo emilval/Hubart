@@ -7,10 +7,10 @@ scale = 0.297 / 2024 * 0.8 #scale image to fit on a4
 
 
 
-x0 = 0.37 # distance to wall
+x0 = 0.35 # distance to wall
 # y0 and z0 define the position of the top left corner of the page
-y0 = -0.075
-z0 = 0.37
+y0 = 0.10
+z0 = 0.55
 
 # this function assumes that the plane is parallel to the yz-plane
 def map_2d_to_3d(u, v):
