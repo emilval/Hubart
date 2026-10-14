@@ -133,9 +133,9 @@ def find_best_a4_plane(
         y_candidates = np.linspace(-0.25, 0.25, 11)
         z_candidates = np.linspace(0.10, 0.60, 11)
     elif quick:
-        x_candidates = np.linspace(0.20, 0.42, 6)
-        y_candidates = np.linspace(-0.10, 0.10, 5)
-        z_candidates = np.linspace(0.20, 0.40, 6)
+        x_candidates = np.linspace(0.30, 0.42, 12)
+        y_candidates = np.linspace(-0.15, 0.15, 5)
+        z_candidates = np.linspace(0.40, 0.50, 10)
     else:
         x_candidates = np.linspace(0.20, 0.42, 24)
         y_candidates = np.linspace(-0.15, 0.15, 25)

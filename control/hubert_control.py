@@ -11,6 +11,55 @@ TARGET_TIMEOUT_S = 60.0
 MAX_POINTS_PER_BATCH = 4
 
 
+def query_robot_status(command: str = "?") -> str:
+    """Send a status query and return the Arduino's response."""
+    if command not in {"?", "status"}:
+        raise ValueError("Command must be '?' or 'status'")
+
+    with serial.Serial(PORT, BAUD_RATE, timeout=2) as robot:
+        time.sleep(RESET_DELAY_S)
+        robot.reset_input_buffer()
+        robot.write(f"{command}\n".encode())
+        robot.flush()
+
+        response_lines = []
+        while True:
+            raw_line = robot.readline()
+            if not raw_line:
+                raise TimeoutError("Arduino did not return a complete status response")
+            line = raw_line.decode(errors="ignore").strip()
+            if not line:
+                continue
+            response_lines.append(line)
+            if line == "--------------------------------":
+                return "\n".join(response_lines)
+
+
+def parse_robot_status(status: str) -> list[float]:
+    """Return base, shoulder, and elbow angles from an Arduino status response."""
+    angles_by_joint = {}
+    for line in status.splitlines():
+        label, separator, value = line.partition(":")
+        if not separator:
+            continue
+
+        joint_name = label.strip().split()[-1]
+        if joint_name not in {"base_joint", "shoulder_joint", "elbow_joint"}:
+            continue
+
+        try:
+            angles_by_joint[joint_name] = float(value.strip().split()[0])
+        except (IndexError, ValueError) as error:
+            raise ValueError(f"Could not parse angle from status line: {line!r}") from error
+
+    joint_order = ("base_joint", "shoulder_joint", "elbow_joint")
+    missing_joints = [joint for joint in joint_order if joint not in angles_by_joint]
+    if missing_joints:
+        raise ValueError(f"Status response is missing joint(s): {', '.join(missing_joints)}")
+
+    return [angles_by_joint[joint] for joint in joint_order]
+
+
 def send_angles_to_robot(
     angles: Iterable[Sequence[float]],
     wait_for_enter: bool = False,

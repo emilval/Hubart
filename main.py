@@ -9,12 +9,12 @@ import argparse
 import importlib.util
 from pathlib import Path
 import numpy as np
-from control.hubert_control import send_angles_to_robot
-from control.inverse_kinematics import get_servo_angles
+from control.hubert_control import parse_robot_status, query_robot_status, send_angles_to_robot
+from control.inverse_kinematics import get_servo_angles, forward_kinematics
 from preprocessing.image_pathing import create_robot_paths
+from preprocessing.map_2d_to_3d import add_page_tilt
 
-
-MAPPING_PATH = Path(__file__).resolve().parent / "preprocessing" / "2d_to_3d.py"
+MAPPING_PATH = Path(__file__).resolve().parent / "preprocessing" / "map_2d_to_3d.py"
 FIXED_ANGLES = (0, 0, 0)
 COORDINATE_DECIMAL_PLACES = 4
 LIFT_X_OFFSET = -0.05
@@ -145,9 +145,9 @@ def map_image_to_3d(image):
 	return mapping.map_image_to_3d(image)
 
 
-def coordinates_to_angles(coordinates):
+def coordinates_to_angles(coordinates, starting_angles):
 	angle_commands = []
-	previous_angles = (32.4, 50.8, -56.6)  
+	previous_angles = starting_angles
 	for stroke in coordinates:
 		for point in stroke:
 			servo_angles = get_servo_angles(point, previous_angles)
@@ -156,7 +156,7 @@ def coordinates_to_angles(coordinates):
 	return angle_commands
 
 
-def draw_image(image_path: Path, send_to_robot: bool = False) -> None:
+def draw_image(image_path: Path, send_to_robot: bool = False, starting_angles: tuple = None) -> None:
 
 	image = create_robot_paths(image_path)
 	print("\nIMAGE PATHING - 2D COORDINATES:")
@@ -176,9 +176,8 @@ def draw_image(image_path: Path, send_to_robot: bool = False) -> None:
 		for stroke in map_image_to_3d(image)
 	]
 	print(coordinates)
-
-
-	starting_point_stroke = [(0.35, 0.10, 0.49)]
+	coordinates = add_page_tilt(coordinates, tilt_angle_degrees=4)
+	starting_point_stroke = [forward_kinematics(starting_angles)]
 	coordinates = [starting_point_stroke, *coordinates]
 	coordinates = add_stroke_transition_points(coordinates)
 
@@ -188,7 +187,7 @@ def draw_image(image_path: Path, send_to_robot: bool = False) -> None:
 			print(f"  stroke {stroke_number}, point {point_number}: {point}")
 
 
-	angles = coordinates_to_angles(coordinates)
+	angles = coordinates_to_angles(coordinates, starting_angles)
 	flat_coordinates = [
 		point
 		for stroke in coordinates
@@ -222,14 +221,15 @@ def draw_image(image_path: Path, send_to_robot: bool = False) -> None:
 def main(args):
     image_generator = GoogleImageGenerator()
     audio_listener = AudioListener()
-
+    starting_angles = parse_robot_status(query_robot_status())
+    print(f"Initial base, shoulder, and elbow angles: {starting_angles}")
     image_path = get_image_path(
         args,
         image_generator,
         audio_listener,
     )
 
-    draw_image(image_path, args.send)
+    draw_image(image_path, args.send, starting_angles=starting_angles)
 
 
 if __name__ == '__main__':

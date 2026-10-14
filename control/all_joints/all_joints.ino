@@ -317,9 +317,10 @@ void setup() {
   Serial.println("  3. Type '?' to view current joint angles");
   Serial.println("=========================================");
 }
-
+bool firstLoop = true;
 void loop() {
   // Read Serial commands from user
+
   if (Serial.available() > 0) {
     String input = Serial.readStringUntil('\n');
     processSerialInput(input);

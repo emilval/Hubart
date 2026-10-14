@@ -104,6 +104,17 @@ def get_servo_angles(target_position, previous_angles):
     return tuple(raw_degrees)
 
 
+def forward_kinematics(angles_degrees):
+    """Return the modeled end-effector position [x, y, z] in meters."""
+    angles_degrees = np.asarray(angles_degrees, dtype=float)
+    if angles_degrees.shape != (3,):
+        raise ValueError("Expected exactly three joint angles: base, shoulder, elbow")
+
+    joint_angles = np.zeros(len(chain.links), dtype=float)
+    joint_angles[1:4] = np.radians(angles_degrees)
+    return tuple(chain.forward_kinematics(joint_angles)[:3, 3].tolist())
+
+
 def cartesian_path_to_servo_angles(
     points,
     previous_angles=(0.0, 0.0, 0.0),
