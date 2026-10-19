@@ -22,8 +22,8 @@ LIFT_STEP_COUNT = 10
 
 
 
-PROMPT_INJECTION = " It should simple black and white line art with simple lines. Minamalistic with no details."
-
+#PROMPT_INJECTION = " It should simple black and white line art with simple lines. Minamalistic with no details."
+PROMPT_INJECTION = " Minimalist line art icon, black and white, simple bold outlines, clean white background, minimalist 2d, no shading, no color, thin black stroke, no background at all"
 def get_unique_image_path(prompt: str, base_dir: Path = Path("./images"), max_length: int = 50) -> Path:
     """
     Creates a unique snake_case file path from a prompt. 
@@ -176,7 +176,7 @@ def draw_image(image_path: Path, send_to_robot: bool = False, starting_angles: t
 		for stroke in map_image_to_3d(image)
 	]
 	print(coordinates)
-	coordinates = add_page_tilt(coordinates, tilt_angle_degrees=4)
+	coordinates = add_page_tilt(coordinates, tilt_angle_degrees=0)
 	starting_point_stroke = [forward_kinematics(starting_angles)]
 	coordinates = [starting_point_stroke, *coordinates]
 	coordinates = add_stroke_transition_points(coordinates)

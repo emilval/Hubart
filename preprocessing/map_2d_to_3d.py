@@ -14,7 +14,7 @@ SCALE_M_PER_PIXEL = min(
 x0 = 0.3545 # distance to wall
 # y0 and z0 define the position of the top left corner of the page
 y0 = 0.0750
-z0 = 0.5000
+z0 = 0.470
 
 # The image's top-left is anchored at (x0, y0, z0) on a plane parallel to YZ.
 # Image-right maps toward -Y and image-down maps toward -Z.
